@@ -2,6 +2,7 @@
 #include "cachelab.h"
 
 int is_transpose(int M, int N, int A[N][M], int B[M][N]);
+void transpose_64_64(int M, int N, int A[N][M], int B[M][N]);
 
 /*
  * transpose_submit - This is the solution transpose function that you
@@ -11,134 +12,152 @@ int is_transpose(int M, int N, int A[N][M], int B[M][N]);
  *     be graded.
  */
 char transpose_submit_desc[] = "Transpose submission";
-void transpose_submit(int M, int N, int A[N][M], int B[M][N])
-{
-    /*
-    if (M == N) {
-        trans_square(M, N, A, B);
+void transpose_submit(int M, int N, int A[N][M], int B[M][N]) {
+    int Bsize;
+    int rowBlock, colBlock;
+    int r, c;
+    int temp = 0, d = 0;
+
+    if (N == 32) {
+        Bsize = 8;
+        for (colBlock = 0; colBlock < N; colBlock += 8) {
+            for (rowBlock = 0; rowBlock < N; rowBlock += 8) {
+                for (r = rowBlock; r < rowBlock + 8; r++) {
+                    for (c = colBlock; c < colBlock + 8; c++) {
+                        if (r != c) {
+                            B[c][r] = A[r][c];
+                        } else {
+                            temp = A[r][c];
+                            d = r;
+                        }
+                    }
+                    if (rowBlock == colBlock) {
+                        B[d][d] = temp;
+                    }
+                }
+            }
+        }
+    } else if (N == 64) {
+        transpose_64_64(M, N, A, B);
     } else {
-        trans_diff(M, N, A, B);
-    }
-    */
-    int i, j, row_block, col_block;
-    int diag = 0;
-    int temp = 0;
+        Bsize = 16;
 
-    /*
-    The access pattern for the defined problem sizes incorporate blocking; we define a sub-matrix of the matrix A with so	 me size b to be a square block. The outer-loops iterate across these block structures, with the two inner loops		  iterating through each block.
-    */
-
-    if (N == 32)
-    {
-        //Finding optimal block sizes included some guess-work; increased B-size for larger M & N when M == N proved less 		 //efficient. However, when M != N, i.e. rectangular matrix, larger B was the way to go.
-        for (col_block = 0; col_block < N; col_block += 8)
-        {
-            for (row_block = 0; row_block < N; row_block += 8)
-            {
-
-                for (i = row_block; i < row_block + 8; i ++)
-                {
-
-                    for (j = col_block; j < col_block + 8; j ++)
-                    {
-                        if (i != j)
-                        {
-                            B[j][i] = A[i][j];
-                        }
-                        else {
-                            //Reduce misses m < i*j in B by storing in temp instead of missing in B[j][i]
-                            temp = A[i][j];
-                            diag = i;
+        for (colBlock = 0; colBlock < M; colBlock += Bsize) {
+            for (rowBlock = 0; rowBlock < N; rowBlock += Bsize) {
+                for (r = rowBlock; (r < N) && (r < rowBlock + Bsize); r++) {
+                    for (c = colBlock; (c < M) && (c < colBlock + Bsize); c++) {
+                        if (r != c) {
+                            B[c][r] = A[r][c];
+                        } else {
+                            temp = A[r][c];
+                            d = r;
                         }
                     }
-
-                    //Transpose of a square-matrix has a unique property; no need to move elements on the diagonal.
-
-                    if (row_block == col_block)
-                    {
-                        //Misses in B reduced to m < i
-                        B[diag][diag] = temp;
+                    if (rowBlock == colBlock) {
+                        B[d][d] = temp;
                     }
                 }
-
             }
         }
-
     }
+}
 
-    else if (N == 64)
-    {
+/*
+ * You can define additional transpose functions below. We've defined
+ * a simple one below to help you get started.
+ */
+char transpose_64_64_desc[] = "Transpose the 64 x 64 matrix";
 
-        //Iterate through matrix using column-major iteration over blocks
-        for (col_block = 0; col_block < N; col_block += 4)
-        {
-            for (row_block = 0; row_block < N; row_block += 4)
-            {
-                //Iterate over each row using row-major iteration
-                for (i = row_block; i < row_block + 4; i ++)
-                {
-                    for (j = col_block; j < col_block + 4; j ++)
-                    {
-                        if (i != j)
-                        {
-                            B[j][i] = A[i][j];
-                        }
-                        else {
-                            //On the diagonal
-                            temp = A[i][j];
-                            diag = i;
-                        }
-                    }
+void transpose_64_64(int M, int N, int A[N][M], int B[M][N]) {
+    int colRun, rowRun, k, a0, a1, a2, a3, a4, a5, a6, a7;
 
-                    if (row_block == col_block)
-                    {
-                        B[diag][diag] = temp;
-                    }
-                }
+    for (colRun = 0; colRun < 64; colRun += 8) {
+        for (rowRun = 0; rowRun < 64; rowRun += 8) {
+            for (k = 0; k < 4; k++) {
+                a0 = A[colRun + k][rowRun + 0];
+                a1 = A[colRun + k][rowRun + 1];
+                a2 = A[colRun + k][rowRun + 2];
+                a3 = A[colRun + k][rowRun + 3];
+                a4 = A[colRun + k][rowRun + 4];
+                a5 = A[colRun + k][rowRun + 5];
+                a6 = A[colRun + k][rowRun + 6];
+                a7 = A[colRun + k][rowRun + 7];
 
+                B[rowRun + 0][colRun + k + 0] = a0;
+                B[rowRun + 0][colRun + k + 4] = a5;
+                B[rowRun + 1][colRun + k + 0] = a1;
+                B[rowRun + 1][colRun + k + 4] = a6;
+                B[rowRun + 2][colRun + k + 0] = a2;
+                B[rowRun + 2][colRun + k + 4] = a7;
+                B[rowRun + 3][colRun + k + 0] = a3;
+                B[rowRun + 3][colRun + k + 4] = a4;
+            }
+
+            a0 = A[colRun + 4][rowRun + 4];
+            a1 = A[colRun + 5][rowRun + 4];
+            a2 = A[colRun + 6][rowRun + 4];
+            a3 = A[colRun + 7][rowRun + 4];
+            a4 = A[colRun + 4][rowRun + 3];
+            a5 = A[colRun + 5][rowRun + 3];
+            a6 = A[colRun + 6][rowRun + 3];
+            a7 = A[colRun + 7][rowRun + 3];
+
+            B[rowRun + 4][colRun + 0] = B[rowRun + 3][colRun + 4];
+            B[rowRun + 4][colRun + 4] = a0;
+            B[rowRun + 3][colRun + 4] = a4;
+            B[rowRun + 4][colRun + 1] = B[rowRun + 3][colRun + 5];
+            B[rowRun + 4][colRun + 5] = a1;
+            B[rowRun + 3][colRun + 5] = a5;
+            B[rowRun + 4][colRun + 2] = B[rowRun + 3][colRun + 6];
+            B[rowRun + 4][colRun + 6] = a2;
+            B[rowRun + 3][colRun + 6] = a6;
+            B[rowRun + 4][colRun + 3] = B[rowRun + 3][colRun + 7];
+            B[rowRun + 4][colRun + 7] = a3;
+            B[rowRun + 3][colRun + 7] = a7;
+
+            for (k = 0; k < 3; k++) {
+
+                a0 = A[colRun + 4][rowRun + 5 + k];
+                a1 = A[colRun + 5][rowRun + 5 + k];
+                a2 = A[colRun + 6][rowRun + 5 + k];
+                a3 = A[colRun + 7][rowRun + 5 + k];
+                a4 = A[colRun + 4][rowRun + k];
+                a5 = A[colRun + 5][rowRun + k];
+                a6 = A[colRun + 6][rowRun + k];
+                a7 = A[colRun + 7][rowRun + k];
+
+                B[rowRun + 5 + k][colRun + 0] = B[rowRun + k][colRun + 4];
+                B[rowRun + 5 + k][colRun + 4] = a0;
+                B[rowRun + k][colRun + 4] = a4;
+                B[rowRun + 5 + k][colRun + 1] = B[rowRun + k][colRun + 5];
+                B[rowRun + 5 + k][colRun + 5] = a1;
+                B[rowRun + k][colRun + 5] = a5;
+                B[rowRun + 5 + k][colRun + 2] = B[rowRun + k][colRun + 6];
+                B[rowRun + 5 + k][colRun + 6] = a2;
+                B[rowRun + k][colRun + 6] = a6;
+                B[rowRun + 5 + k][colRun + 3] = B[rowRun + k][colRun + 7];
+                B[rowRun + 5 + k][colRun + 7] = a3;
+                B[rowRun + k][colRun + 7] = a7;
             }
         }
-
-
     }
-    else {
+}
 
-        //Iterate through matrix using column-major iteration over blocks
-        for (col_block = 0; col_block < M; col_block += 16)
-        {
-            for (row_block = 0; row_block < N; row_block += 16)
-            {
-                //Since our sizes are prime, not all blocks will be square sub-matrices
-                //Consider corner-case when (row_block + 16 > N) => invalid access. Explicit check for i, j < n, m
-                for (i = row_block; (i < row_block + 16) && (i < N); i ++)
-                {
-                    for (j = col_block; (j < col_block + 16) && (j < M); j ++)
-                    {
+/*
+ * trans - A simple baseline transpose function, not optimized for the cache.
+ */
+char trans_desc[] = "Simple row-wise scan transpose";
+void trans(int M, int N, int A[N][M], int B[M][N]) {
+    int i, j, tmp;
 
-                        if (i != j)
-                        {
-                            B[j][i] = A[i][j];
-                        }
-                        else
-                        {
-                            temp = A[i][j];
-                            diag = i;
-                        }
-                    }
-
-                    if (row_block == col_block) {
-                        B[diag][diag] = temp;
-                    }
-
-                }
-
-            }
+    for (i = 0; i < N; i++) {
+        for (j = 0; j < M; j++) {
+            tmp = A[i][j];
+            B[j][i] = tmp;
         }
-
     }
 
 }
-
 
 /*
  * registerFunctions - This function registers your transpose
@@ -147,12 +166,12 @@ void transpose_submit(int M, int N, int A[N][M], int B[M][N])
  *     performance. This is a handy way to experiment with different
  *     transpose strategies.
  */
-void registerFunctions()
-{
+void registerFunctions() {
     /* Register your solution function */
     registerTransFunction(transpose_submit, transpose_submit_desc);
 
     /* Register any additional transpose functions */
+    registerTransFunction(trans, trans_desc);
 
 }
 
@@ -161,8 +180,7 @@ void registerFunctions()
  *     A. You can check the correctness of your transpose by calling
  *     it before returning from the transpose function.
  */
-int is_transpose(int M, int N, int A[N][M], int B[M][N])
-{
+int is_transpose(int M, int N, int A[N][M], int B[M][N]) {
     int i, j;
 
     for (i = 0; i < N; i++) {
