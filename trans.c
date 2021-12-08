@@ -13,124 +13,132 @@ int is_transpose(int M, int N, int A[N][M], int B[M][N]);
 char transpose_submit_desc[] = "Transpose submission";
 void transpose_submit(int M, int N, int A[N][M], int B[M][N])
 {
-    int col_n;
-    int row_n;
-    int i = 0;
-    int j = 0;
-    int d = 0;
-    int miss_save;
-    int m_2;
-    int m_3;
-    int b_size = 8;
-    int b_size_64 = 4;
-    int b_size_67 = 16;
-
-    //program arranged by converting pseudeocode/reading an academic paper created by the Georgia Tech CS department
-    //URL:http://www.cc.gatech.edu/~bader/COURSES/UNM/ece637-Fall2003/papers/KW03.pdf
-    if(M == 32){
-        for(row_n = 0; row_n < M; row_n += b_size){
-            for(col_n =0; col_n < M; col_n += b_size){
-                for(i = row_n; i < row_n + b_size; i++){
-                    for(j = col_n; j < col_n + b_size; j++){
-                        if(i == j){
-                            d = i;
-                            //for the transpose of an even numbered matrix, the elements on the diagonal will remain in place.
-                            //store the value, to resolve the 'miss'
-                            miss_save = A[i][j];
-                        }
-                        else{
-                            //swap the appropriate elements rows-> cols and cols -> rows
-                            B[j][i] = A[i][j];
-                        }
-                    }
-
-                    if(row_n == col_n){
-                        //place 'miss' on the appropriate diagonal index of the output matrix B
-                        B[d][d] = miss_save;
-                    }
-                }
-            }
-        }
+    /*
+    if (M == N) {
+        trans_square(M, N, A, B);
+    } else {
+        trans_diff(M, N, A, B);
     }
+    */
+    int i, j, row_block, col_block;
+    int diag = 0;
+    int temp = 0;
 
+    /*
+    The access pattern for the defined problem sizes incorporate blocking; we define a sub-matrix of the matrix A with so	 me size b to be a square block. The outer-loops iterate across these block structures, with the two inner loops		  iterating through each block.
+    */
 
-    else if(M == 64){
-        //works identically to the base case, adjusts the block size to 4
-        for(row_n = 0; row_n < M; row_n += b_size_64){
-            for(col_n =0; col_n < M; col_n += b_size_64){
-                for(i = row_n; i < row_n + b_size_64; i++){
-                    for(j = col_n; j < col_n + b_size_64; j++){
-                        if(i == j){
-                            d = i;
-                            m_2 = A[i][j];
-                        }
-                        else{
+    if (N == 32)
+    {
+        //Finding optimal block sizes included some guess-work; increased B-size for larger M & N when M == N proved less 		 //efficient. However, when M != N, i.e. rectangular matrix, larger B was the way to go.
+        for (col_block = 0; col_block < N; col_block += 8)
+        {
+            for (row_block = 0; row_block < N; row_block += 8)
+            {
 
+                for (i = row_block; i < row_block + 8; i ++)
+                {
+
+                    for (j = col_block; j < col_block + 8; j ++)
+                    {
+                        if (i != j)
+                        {
                             B[j][i] = A[i][j];
                         }
-                    }
-
-                    if(row_n == col_n){
-                        B[d][d] = m_2;
-                    }
-                }
-            }
-        }
-    }
-
-
-    else{
-        //block size = 16
-        //works almost identically to the two prior clauses except because the dimensions are different, we must
-        //make sure that we are within bounds for the inner loops where we index the matrices, so as to avoid a segfault
-        for(row_n = 0; row_n < 67; row_n += b_size_67){
-            for(col_n = 0; col_n < 61; col_n += b_size_67){
-                for(i = row_n;  (i < row_n + b_size_67) && (i < 67); i++){
-                    for(j = col_n; (j < col_n + b_size_67) && (j < 61);j++){
-                        if(i == j){
-
-                            d = i;
-                            m_3 = A[i][j];
-                        }
-                        else{
-
-                            B[j][i] = A[i][j];
-
+                        else {
+                            //Reduce misses m < i*j in B by storing in temp instead of missing in B[j][i]
+                            temp = A[i][j];
+                            diag = i;
                         }
                     }
 
-                    if(row_n == col_n){
-                        B[d][d] = m_3;
-                    }
+                    //Transpose of a square-matrix has a unique property; no need to move elements on the diagonal.
 
+                    if (row_block == col_block)
+                    {
+                        //Misses in B reduced to m < i
+                        B[diag][diag] = temp;
+                    }
                 }
 
             }
         }
 
     }
+
+    else if (N == 64)
+    {
+
+        //Iterate through matrix using column-major iteration over blocks
+        for (col_block = 0; col_block < N; col_block += 4)
+        {
+            for (row_block = 0; row_block < N; row_block += 4)
+            {
+                //Iterate over each row using row-major iteration
+                for (i = row_block; i < row_block + 4; i ++)
+                {
+                    for (j = col_block; j < col_block + 4; j ++)
+                    {
+                        if (i != j)
+                        {
+                            B[j][i] = A[i][j];
+                        }
+                        else {
+                            //On the diagonal
+                            temp = A[i][j];
+                            diag = i;
+                        }
+                    }
+
+                    if (row_block == col_block)
+                    {
+                        B[diag][diag] = temp;
+                    }
+                }
+
+            }
+        }
+
+
+    }
+    else {
+
+        //Iterate through matrix using column-major iteration over blocks
+        for (col_block = 0; col_block < M; col_block += 16)
+        {
+            for (row_block = 0; row_block < N; row_block += 16)
+            {
+                //Since our sizes are prime, not all blocks will be square sub-matrices
+                //Consider corner-case when (row_block + 16 > N) => invalid access. Explicit check for i, j < n, m
+                for (i = row_block; (i < row_block + 16) && (i < N); i ++)
+                {
+                    for (j = col_block; (j < col_block + 16) && (j < M); j ++)
+                    {
+
+                        if (i != j)
+                        {
+                            B[j][i] = A[i][j];
+                        }
+                        else
+                        {
+                            temp = A[i][j];
+                            diag = i;
+                        }
+                    }
+
+                    if (row_block == col_block) {
+                        B[diag][diag] = temp;
+                    }
+
+                }
+
+            }
+        }
+
+    }
+
 }
-/*
- * You can define additional transpose functions below. We've defined
- * a simple one below to help you get started.
- */
 
-/*
- * trans - A simple baseline transpose function, not optimized for the cache.
- */
-char trans_desc[] = "Simple row-wise scan transpose";
-void trans(int M, int N, int A[N][M], int B[M][N])
-{
-    int i, j, tmp;
-
-    for (i = 0; i < N; i++) {
-        for (j = 0; j < M; j++) {
-            tmp = A[i][j];
-            B[j][i] = tmp;
-        }
-    }
-
-}
 
 /*
  * registerFunctions - This function registers your transpose
@@ -145,7 +153,6 @@ void registerFunctions()
     registerTransFunction(transpose_submit, transpose_submit_desc);
 
     /* Register any additional transpose functions */
-    registerTransFunction(trans, trans_desc);
 
 }
 
