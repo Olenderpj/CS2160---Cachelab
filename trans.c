@@ -2,9 +2,6 @@
 #include "cachelab.h"
 
 int is_transpose(int M, int N, int A[N][M], int B[M][N]);
-void transpose_32(int M, int N, int A[N][M], int B[M][N]);
-void transpose_64(int M, int N, int A[N][M], int B[M][N]);
-void transpose_other(int M, int N, int A[N][M], int B[M][N]);
 
 /*
  * transpose_submit - This is the solution transpose function that you
@@ -14,168 +11,109 @@ void transpose_other(int M, int N, int A[N][M], int B[M][N]);
  *     be graded.
  */
 char transpose_submit_desc[] = "Transpose submission";
-void transpose_submit(int M, int N, int A[N][M], int B[M][N]){
+void transpose_submit(int M, int N, int A[N][M], int B[M][N])
+{
+    int col_n;
+    int row_n;
+    int i = 0;
+    int j = 0;
+    int d = 0;
+    int miss_save;
+    int m_2;
+    int m_3;
+    int b_size = 8;
+    int b_size_64 = 4;
+    int b_size_67 = 16;
 
-    // Determine variation of transpose function to run based on dimensions of input matrix
-    switch(N) {
-        case 32:	// 32x32 matrix
-            transpose_32(M, N, A, B);
-            break;
-        case 64:	// 64x64 matrix
-            transpose_64(M, N, A, B);
-            break;
-        default:	// all matrices not 32x32 or 64x64
-            transpose_other(M, N, A, B);
-            break;
+    //program arranged by converting pseudeocode/reading an academic paper created by the Georgia Tech CS department
+    //URL:http://www.cc.gatech.edu/~bader/COURSES/UNM/ece637-Fall2003/papers/KW03.pdf
+    if(M == 32){
+        for(row_n = 0; row_n < M; row_n += b_size){
+            for(col_n =0; col_n < M; col_n += b_size){
+                for(i = row_n; i < row_n + b_size; i++){
+                    for(j = col_n; j < col_n + b_size; j++){
+                        if(i == j){
+                            d = i;
+                            //for the transpose of an even numbered matrix, the elements on the diagonal will remain in place.
+                            //store the value, to resolve the 'miss'
+                            miss_save = A[i][j];
+                        }
+                        else{
+                            //swap the appropriate elements rows-> cols and cols -> rows
+                            B[j][i] = A[i][j];
+                        }
+                    }
+
+                    if(row_n == col_n){
+                        //place 'miss' on the appropriate diagonal index of the output matrix B
+                        B[d][d] = miss_save;
+                    }
+                }
+            }
+        }
+    }
+
+
+    else if(M == 64){
+        //works identically to the base case, adjusts the block size to 4
+        for(row_n = 0; row_n < M; row_n += b_size_64){
+            for(col_n =0; col_n < M; col_n += b_size_64){
+                for(i = row_n; i < row_n + b_size_64; i++){
+                    for(j = col_n; j < col_n + b_size_64; j++){
+                        if(i == j){
+                            d = i;
+                            m_2 = A[i][j];
+                        }
+                        else{
+
+                            B[j][i] = A[i][j];
+                        }
+                    }
+
+                    if(row_n == col_n){
+                        B[d][d] = m_2;
+                    }
+                }
+            }
+        }
+    }
+
+
+    else{
+        //block size = 16
+        //works almost identically to the two prior clauses except because the dimensions are different, we must
+        //make sure that we are within bounds for the inner loops where we index the matrices, so as to avoid a segfault
+        for(row_n = 0; row_n < 67; row_n += b_size_67){
+            for(col_n = 0; col_n < 61; col_n += b_size_67){
+                for(i = row_n;  (i < row_n + b_size_67) && (i < 67); i++){
+                    for(j = col_n; (j < col_n + b_size_67) && (j < 61);j++){
+                        if(i == j){
+
+                            d = i;
+                            m_3 = A[i][j];
+                        }
+                        else{
+
+                            B[j][i] = A[i][j];
+
+                        }
+                    }
+
+                    if(row_n == col_n){
+                        B[d][d] = m_3;
+                    }
+
+                }
+
+            }
+        }
+
     }
 }
-
-
 /*
  * You can define additional transpose functions below. We've defined
  * a simple one below to help you get started.
  */
-
-/*
- * transpose_32 - Matrix transposition function optimized for a 32x32 matrix
- 					Fairly optimal solution - # of misses is ~290
- * Params:
- *	M - Number of columns in the matrix
- *	N -	Number of rows in the matrix
- *	A[N][M] - Input matrix - the one transposed from
- *	B[N][M] - Input matrix - the one transposed to
- * Returns: void
- */
-char transpose_32_desc[] = "Transpose a 32x32 matrix";
-void transpose_32(int M, int N, int A[N][M], int B[M][N]){
-
-    int n, m; 		// Indecies for rows and columns in matrix
-    int row, col;	// Track current row and column in matrix
-    int d_val = 0;	// Hold value of diagonal element found in matrix (detailed in below code)
-    int diag = 0;	// Hold position of diagonal element found in matrix (detailed in below code)
-
-    // Iterates through each column and row
-    for (col = 0; col < N; col += 8) {
-        for (row = 0; row < N; row += 8) {
-
-            // For each row and column in the designated block, until end of matrix
-            for (n = row; n < (row + 8); n++) {
-                for (m = col; m < (col + 8); m++) {
-
-                    // If row and column do not match, transposition will occur
-                    if (n != m) {
-                        B[m][n] = A[n][m];
-                        // Else, row and column are same and element in matrix is defined as a diagonal
-                    } else {
-
-                        // Assign diagonal element to a temporary variable
-                        // This saves an individual cache miss on each run through the matrix where the columns and rows still match up
-                        diag = n;
-                        d_val = A[n][m];
-                    }
-                }
-                // If row and column are same, element is defined as a diagonal and our temporarily saved element is assigned
-                if (row == col) {
-                    B[diag][diag] = d_val;
-                }
-            }
-        }
-    }
-}
-
-/*
- * transpose_64 - Matrix transposition function optimized for a 64x64 matrix
- 					Not the most optimal solution - couldn't determine a way to reduce # of misses below ~1750 =(
- * Params:
- *	M - Number of columns in the matrix
- *	N -	Number of rows in the matrix
- *	A[N][M] - Input matrix - the one transposed from
- *	B[N][M] - Input matrix - the one transposed to
- * Returns: void
- */
-char transpose_64_desc[] = "Transpose a 64x64 matrix";
-void transpose_64(int M, int N, int A[N][M], int B[M][N]){
-
-    int n, m; 		// Indecies for rows and columns in matrix
-    int row, col;	// Track current row and column in matrix
-    int d_val = 0;	// Hold value of diagonal element found in matrix (detailed in below code)
-    int diag = 0;	// Hold position of diagonal element found in matrix (detailed in below code)
-
-    // Iterates through each column and row
-    for (col = 0; col < N; col += 4) {
-        for (row = 0; row < N; row += 4) {
-
-            // For each row and column in the designated block, until end of matrix
-            for (n = row; n < (row + 4); n++) {
-                for (m = col; m < (col + 4); m++) {
-
-                    // If row and column number do not match, transposition will occur
-                    if (n != m) {
-                        B[m][n] = A[n][m];
-                        // Else, row and column number are same and element in matrix is defined as a diagonal
-                    } else {
-
-                        // Assign diagonal element to a temporary variable
-                        // This saves an individual cache miss on each run through the matrix where the columns and rows still match up
-                        diag = n;
-                        d_val = A[n][m];
-                    }
-                }
-                // If row and column are same, element is defined as a diagonal and our temporarily saved element is assigned
-                if (row == col) {
-                    B[diag][diag] = d_val;
-                }
-            }
-        }
-    }
-}
-
-/*
- * transpose_other - Matrix transposition function optimized for matricies that aren't 32x32 or 64x64
- 					Appears to be a fairly optimal solution - # of misses for a 61x67 matrix is ~1800
- * Params:
- *	M - Number of columns in the matrix
- *	N -	Number of rows in the matrix
- *	A[N][M] - Input matrix - the one transposed from
- *	B[N][M] - Input matrix - the one transposed to
- * Returns: void
- */
-char transpose_other_desc[] = "Transpose any matrix that isn't 32x32 or 64x64";
-void transpose_other(int M, int N, int A[N][M], int B[M][N]){
-
-    int n, m; 		// Indecies for rows and columns in matrix
-    int row, col;	// Track current row and column in matrix
-    int d_val = 0;	// Hold value of diagonal element found in matrix (detailed in below code)
-    int diag = 0;	// Hold position of diagonal element found in matrix (detailed in below code)
-
-    // Iterates through each column and row
-    for (col = 0; col < M; col += 16) {
-        for (row = 0; row < N; row += 16) {
-
-            // For each row and column after current one, until end of matrix
-            for (n = row; (n < row + 16) && (n < N); n++) {
-                for (m = col; (m < col + 16) && (m < M); m++) {
-
-                    // If row and column number do not match, transposition will occur
-                    if (n != m) {
-                        B[m][n] = A[n][m];
-                        // Else, row and column number are same and element in matrix is defined as a diagonal
-                    } else {
-
-                        // Assign diagonal element to a temporary variable
-                        // This saves an individual cache miss on each run through the matrix where the columns and rows still match up
-                        diag = n;
-                        d_val = A[n][m];
-                    }
-                }
-                // If row and column are same, element is defined as a diagonal and our temporarily saved element is assigned
-                if (row == col) {
-                    B[diag][diag] = d_val;
-                }
-            }
-        }
-    }
-}
 
 /*
  * trans - A simple baseline transpose function, not optimized for the cache.
@@ -208,11 +146,6 @@ void registerFunctions()
 
     /* Register any additional transpose functions */
     registerTransFunction(trans, trans_desc);
-
-    // Register custom transpose functions
-    registerTransFunction(transpose_32, transpose_32_desc);
-    registerTransFunction(transpose_64, transpose_64_desc);
-    registerTransFunction(transpose_other, transpose_other_desc);
 
 }
 
